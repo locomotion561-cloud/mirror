@@ -2,10 +2,9 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>MirrorHands - Saf Dikey Simetri</title>
+    <title>MirrorHands - 2X Mesafe</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <style>
-      /* Giriş ekranı ve tarayıcı güvenlik tetikleyicisi */
       #overlay {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
         background: #000000; z-index: 9999;
@@ -23,11 +22,10 @@
 
     <div id="overlay">
       <button class="start-btn" onclick="startApp()">BAŞLAT</button>
-      <div id="status font-family: sans-serif;">Kamera izni bekleniyor...</div>
+      <div id="status">Kamera izni bekleniyor...</div>
     </div>
 
     <script>
-      // EKRANI DİKEY BÖLÜP SAĞI DÜZ, SOLU SAĞIN AYNASI YAPAN SHADER
       AFRAME.registerShader('split-mirror-shader', {
         schema: { src: { type: 'map', is: 'uniform' } },
         vertexShader: `
@@ -41,13 +39,9 @@
           varying vec2 vUv;
           uniform sampler2D src;
           void main() {
-            // vUv.x yatay eksendir (0.0 en sol, 1.0 en sağ, 0.5 tam ortasıdır)
-            
             if (vUv.x >= 0.5) {
-              // Ekranın Sağ Yarısı: Kameranın ham, doğal görüntüsünü olduğu gibi yansıt
               gl_FragColor = texture2D(src, vUv);
             } else {
-              // Ekranın Sol Yarısı: Sağ taraftaki görüntüyü yatay eksende ters çevirerek (aynalayarak) bas
               vec2 mirroredUv = vec2(1.0 - vUv.x, vUv.y);
               gl_FragColor = texture2D(src, mirroredUv);
             }
@@ -63,9 +57,9 @@
 
       <a-entity camera look-controls position="0 1.6 0">
         <a-plane id="mirror-screen" 
-                 position="0 0 -1.0" 
-                 width="2.7" 
-                 height="2.0" 
+                 position="0 0 -2.0" 
+                 width="5.4" 
+                 height="4.0" 
                  material="shader: split-mirror-shader; src: #webcam;">
         </a-plane>
       </a-entity>
@@ -78,7 +72,6 @@
       const statusText = document.querySelector('#status');
       let localStream = null;
 
-      // Kamera akışını arkada hazırlıyoruz
       navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment', width: 640, height: 480, frameRate: 60}})
         .then((stream) => {
           localStream = stream;
@@ -91,14 +84,10 @@
           statusText.innerHTML = "Kamera izni alınamadı."; 
         });
 
-      // Uygulamayı VR modunda başlatan fonksiyon
       function startApp() {
         if (!localStream) return;
-        
         video.play().then(() => {
           document.getElementById('overlay').style.display = 'none';
-          
-          // Doğrudan iki gözlü VR (Cardboard) moduna giriş yap
           setTimeout(() => { 
             document.querySelector('a-scene').enterVR(); 
           }, 200);
