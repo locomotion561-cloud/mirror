@@ -2,107 +2,153 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>MirrorHands - Dirsek Perspektifi</title>
+    <title>MirrorHands VR - Klinik Oyun Merkezi</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <style>
-      #overlay {
+      body { background-color: #000; margin: 0; font-family: sans-serif; overflow: hidden; }
+      #main-menu {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        background: #000000; z-index: 9999;
-        display: flex; flex-direction: column; justify-content: center; align-items: center;
+        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        z-index: 10000; display: flex; flex-direction: column; justify-content: center; align-items: center;
       }
-      .start-btn {
-        padding: 20px 40px; font-size: 22px; font-weight: bold; cursor: pointer;
-        border: 2px solid #ffffff; border-radius: 50px; background-color: #007AFF; color: white;
-        box-shadow: 0 4px 15px rgba(0,74,255,0.5);
+      h1 { color: #f8fafc; margin-bottom: 40px; font-size: 32px; letter-spacing: 2px; }
+      .game-card {
+        width: 300px; padding: 20px; margin: 10px; border-radius: 20px;
+        background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);
+        color: white; cursor: pointer; text-align: center; transition: 0.3s;
       }
-      #status { color: #ffffff; font-family: sans-serif; margin-top: 20px; font-size: 16px; text-align: center; }
+      .game-card:hover { background: #007AFF; transform: scale(1.05); }
+      .game-card h2 { margin: 0; font-size: 20px; }
+      .game-card p { font-size: 14px; opacity: 0.7; margin-top: 8px; }
+      #status { color: #10b981; margin-top: 20px; font-size: 14px; }
     </style>
   </head>
   <body>
 
-    <div id="overlay">
-      <button class="start-btn" onclick="startApp()">BAŞLAT</button>
-      <div id="status font-family: sans-serif;">Kamera bekleniyor, lütfen izin verin...</div>
+    <div id="main-menu">
+      <h1>MIRRORHANDS VR</h1>
+      
+      <div class="game-card" onclick="launchGame('balloon')">
+        <h2>🎈 Balon Patlatma</h2>
+        <p>Rastgele çıkan balonlara dokunmaya çalışın.</p>
+      </div>
+
+      <div class="game-card" onclick="launchGame('rhythm')">
+        <h2>🎵 Ritim Takibi</h2>
+        <p>Müzik notalarını masada yakalayın.</p>
+      </div>
+
+      <div class="game-card" onclick="launchGame('line')">
+        <h2>🛤️ Çizgi Takibi</h2>
+        <p>Elinizi çizginin üzerinde tutarak ilerleyin.</p>
+      </div>
+
+      <div id="status">Kamera hazırlanıyor...</div>
     </div>
 
     <script>
-      AFRAME.registerShader('split-mirror-shader', {
+      // KLİNİK AYNA SHADER'I (Sağ düz, Sol aynalanmış)
+      AFRAME.registerShader('mirror-engine', {
         schema: { src: { type: 'map', is: 'uniform' } },
-        vertexShader: `
-          varying vec2 vUv;
-          void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }
-        `,
+        vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
         fragmentShader: `
           varying vec2 vUv;
           uniform sampler2D src;
           void main() {
-            if (vUv.x >= 0.5) {
-              gl_FragColor = texture2D(src, vUv);
-            } else {
-              vec2 mirroredUv = vec2(1.0 - vUv.x, vUv.y);
-              gl_FragColor = texture2D(src, mirroredUv);
-            }
+            if (vUv.x >= 0.5) { gl_FragColor = texture2D(src, vUv); } 
+            else { vec2 mirroredUv = vec2(1.0 - vUv.x, vUv.y); gl_FragColor = texture2D(src, mirroredUv); }
           }
         `
       });
     </script>
 
-    <a-scene webxr="referenceSpaceType: local">
+    <a-scene webxr="referenceSpaceType: local" vr-mode-ui="enabled: false">
       <a-assets>
         <video id="webcam" autoplay playsinline muted loop crossorigin="anonymous"></video>
       </a-assets>
 
-      <a-entity camera look-controls position="0 1.6 0">
+      <a-entity id="rig" camera look-controls position="0 1.6 0">
         <a-plane id="mirror-screen" 
                  position="0 -0.2 -1.2" 
-                 rotation="-30 0 0"
-                 width="4.8" 
-                 height="3.6" 
-                 material="shader: split-mirror-shader; src: #webcam;">
+                 rotation="-30 0 0" 
+                 width="4.8" height="3.6" 
+                 material="shader: mirror-engine; src: #webcam;">
         </a-plane>
+
+        <a-entity id="game-elements" position="0 -0.4 -1.0" rotation="-30 0 0"></a-entity>
       </a-entity>
 
-      <a-sky color="#000000"></a-sky>
+      <a-sky color="#000"></a-sky>
     </a-scene>
 
     <script>
       const video = document.querySelector('#webcam');
+      const gameContainer = document.querySelector('#game-elements');
       const statusText = document.querySelector('#status');
       let localStream = null;
 
-      // GENİŞ AÇI İÇİN ÇÖZÜNÜRLÜK AYARI: Dirsekleri sığdırmak için HD (1280x720) istiyoruz.
-      const constraints = {
-        video: { 
-          facingMode: 'environment', 
-          width: { ideal: 1280 }, 
-          height: { ideal: 720 }, 
-          frameRate: { ideal: 60 } 
-        }
-      };
-
-      navigator.mediaDevices.getUserMedia(constraints)
-        .then((stream) => {
+      // Kamerayı Başlat
+      navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment', width: 1280, height: 720}})
+        .then(stream => {
           localStream = stream;
           video.srcObject = stream;
-          statusText.style.color = "lime";
-          statusText.innerHTML = "Kamera Hazır. Başlat butonuna basabilirsiniz.";
-        })
-        .catch((err) => { 
-          statusText.style.color = "red";
-          statusText.innerHTML = "Kamera izni alınamadı. Lütfen ayarlardan izin verin."; 
-        });
+          statusText.innerText = "Sistem Hazır. Oyuna Başlayabilirsiniz.";
+        }).catch(() => { statusText.innerText = "Kamera Hatası!"; });
 
-      function startApp() {
-        if (!localStream) return;
-        video.play().then(() => {
-          document.getElementById('overlay').style.display = 'none';
-          setTimeout(() => { 
-            document.querySelector('a-scene').enterVR(); 
-          }, 200);
-        });
+      function launchGame(type) {
+        if(!localStream) return;
+        video.play();
+        document.getElementById('main-menu').style.display = 'none';
+        document.querySelector('a-scene').enterVR();
+
+        // Seçilen Oyunu Kur
+        if (type === 'balloon') initBalloonGame();
+        if (type === 'rhythm') initRhythmGame();
+        if (type === 'line') initLineGame();
+      }
+
+      // 1. OYUN: BALON PATLATMA
+      function initBalloonGame() {
+        setInterval(() => {
+          const el = document.createElement('a-sphere');
+          const xPos = (Math.random() * 1.5) + 0.2; // Sağ tarafta rastgele konum
+          el.setAttribute('position', `${xPos} 0 0`);
+          el.setAttribute('radius', '0.15');
+          el.setAttribute('color', '#FF3B30');
+          el.setAttribute('animation', 'property: scale; to: 0 0 0; dur: 2000; easing: easeInQuad');
+          gameContainer.appendChild(el);
+          setTimeout(() => el.remove(), 2000);
+        }, 1500);
+      }
+
+      // 2. OYUN: RİTİM TAKİBİ
+      function initRhythmGame() {
+        // Hedef Çizgisi
+        const line = document.createElement('a-rect');
+        line.setAttribute('width', '4'); line.setAttribute('height', '0.05');
+        line.setAttribute('position', '0 -0.5 0'); line.setAttribute('color', 'lime');
+        gameContainer.appendChild(line);
+
+        setInterval(() => {
+          const note = document.createElement('a-box');
+          const xPos = (Math.random() * 1.5) + 0.2;
+          note.setAttribute('position', `${xPos} 1 0`);
+          note.setAttribute('width', '0.2'); note.setAttribute('height', '0.1');
+          note.setAttribute('animation', 'property: position; to: ' + xPos + ' -0.6 0; dur: 3000; easing: linear');
+          gameContainer.appendChild(note);
+          setTimeout(() => note.remove(), 3000);
+        }, 1000);
+      }
+
+      // 3. OYUN: ÇİZGİ TAKİBİ
+      function initLineGame() {
+        const path = document.createElement('a-torus-knot');
+        path.setAttribute('radius', '0.4');
+        path.setAttribute('radius-tubular', '0.01');
+        path.setAttribute('position', '0.8 0 0'); // Sağ tarafa yolu koy
+        path.setAttribute('rotation', '90 0 0');
+        path.setAttribute('color', 'yellow');
+        gameContainer.appendChild(path);
       }
     </script>
   </body>
