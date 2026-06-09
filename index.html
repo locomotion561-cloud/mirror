@@ -2,146 +2,188 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>MirrorHands VR - Kusursuz Aynalama</title>
+    <title>MirrorHands VR - AI Hand Mirror</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    
     <style>
-      #menu-container {
-        position: fixed;
-        top: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 9999;
-        display: flex;
-        gap: 15px;
-      }
-      .btn {
-        padding: 15px 30px;
-        font-size: 18px;
-        font-weight: bold;
-        cursor: pointer;
-        border: 2px solid #ffffff;
-        border-radius: 30px;
-        background-color: #007AFF;
-        color: white;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-      }
-      #status-text {
-        position: fixed;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        color: lime;
-        font-family: sans-serif;
-        font-size: 16px;
-        background: rgba(0,0,0,0.8);
-        padding: 10px 20px;
-        border-radius: 5px;
-        z-index: 9999;
-        text-align: center;
-      }
+      #menu-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; display: flex; gap: 15px; }
+      .btn { padding: 15px 30px; font-size: 18px; font-weight: bold; cursor: pointer; border: 2px solid #ffffff; border-radius: 30px; background-color: #007AFF; color: white; }
+      #status-text { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); color: lime; font-family: sans-serif; font-size: 16px; background: rgba(0,0,0,0.8); padding: 10px 20px; border-radius: 5px; z-index: 9999; text-align: center; }
+      /* Görüntüyü işleyeceğimiz gizli tuval (Canvas) */
+      #output-canvas { display: none; }
     </style>
   </head>
   <body>
 
     <div id="menu-container">
-      <button class="btn" onclick="startMirroring('right')">Sağ El Sağlam</button>
-      <button class="btn" onclick="startMirroring('left')">Sol El Sağlam</button>
+      <button class="btn" onclick="setMode('right')">Sağ El Sağlam (Solu Sil/Değiştir)</button>
+      <button class="btn" onclick="setMode('left')">Sol El Sağlam (Sağı Sil/Değiştir)</button>
     </div>
-    <div id="status-text">Kamera İzni Bekleniyor...</div>
+    <div id="status-text">Yapay Zeka Modeli Yükleniyor, Lütfen Bekleyin...</div>
+
+    <video id="webcam" autoplay playsinline muted style="display:none;"></video>
+    <canvas id="output-canvas" width="640" height="480"></canvas>
 
     <script>
-      // Geliştirilmiş WebGL Aynalama Shader'ı
-      AFRAME.registerShader('mirror-shader', {
-        schema: {
-          src: { type: 'map', is: 'uniform' },
-          flipX: { type: 'boolean', is: 'uniform', default: true }
-        },
-        vertexShader: `
-          varying vec2 vUv;
-          void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }
-        `,
-        fragmentShader: `
-          varying vec2 vUv;
-          uniform sampler2D src;
-          uniform bool flipX;
-          void main() {
-            // flipX true ise sağ-sol ters çevir, false ise düz bırak
-            vec2 finalUv = flipX ? vec2(1.0 - vUv.x, vUv.y) : vUv;
-            gl_FragColor = texture2D(src, finalUv);
-          }
-        `
+      // Basit bir doku (Texture) shader'ı, işlenmiş canvas'ı VR ekrana basacak
+      AFRAME.registerShader('canvas-shader', {
+        schema: { src: { type: 'map', is: 'uniform' } },
+        vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+        fragmentShader: `varying vec2 vUv; uniform sampler2D src; void main() { gl_FragColor = texture2D(src, vUv); }`
       });
     </script>
 
     <a-scene webxr="referenceSpaceType: local">
       <a-assets>
-        <video id="webcam" autoplay playsinline muted loop crossorigin="anonymous"></video>
+        <canvas id="vr-canvas-source" width="640" height="480"></canvas>
       </a-assets>
 
       <a-entity camera look-controls position="0 1.6 0">
-        <a-plane id="mirror-screen" 
-                 position="0 0 -1.5" 
-                 width="4" 
-                 height="3" 
-                 material="shader: mirror-shader; src: #webcam; flipX: true;">
-        </a-plane>
+        <a-plane id="mirror-screen" position="0 0 -1.5" width="4" height="3" material="shader: canvas-shader; src: #output-canvas;"></a-plane>
       </a-entity>
-
       <a-sky color="#000000"></a-sky>
     </a-scene>
 
     <script>
       const video = document.querySelector('#webcam');
-      const mirrorScreen = document.querySelector('#mirror-screen');
+      const canvas = document.querySelector('#output-canvas');
+      const ctx = canvas.getContext('2d');
       const statusText = document.querySelector('#status-text');
-      let localStream = null;
+      const mirrorScreen = document.querySelector('#mirror-screen');
+      
+      let stableMode = 'right'; // Varsayılan: Sağ el sağlam
+      let modelLoaded = false;
 
-      function requestCamera() {
-        const constraints = {
-          video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 60 } },
-          audio: false
-        };
-        navigator.mediaDevices.getUserMedia(constraints)
-          .then((stream) => {
-            localStream = stream;
-            video.srcObject = stream;
-            statusText.style.color = "lime";
-            statusText.innerHTML = "Kamera Hazır! <br> Elinizi seçip gözlüğü takabilirsiniz.";
-          })
-          .catch((err) => {
-            statusText.style.color = "red";
-            statusText.innerHTML = "Kamera izni alınamadı.";
-          });
-      }
+      // 1. MediaPipe Hands Kurulumu
+      const hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
 
-      requestCamera();
+      hands.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 0, // 0 = Lite (En hızlısı, mobil için gecikmesiz model)
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
 
-      function startMirroring(dominantHand) {
-        if (!localStream) { alert("Kamera izni verilmedi."); return; }
-        
-        video.play().then(() => {
-          
-          // Arka kamera (environment) kullandığımız için görüntü zaten doğal olarak terstir.
-          // Klinikteki gerçek ayna etkisini yakalamak için mantığı kuralım:
-          if (dominantHand === 'right') {
-            // Sağ el sağlamsa, sol tarafta sağlam elin simetrik yansımasını görmeliyiz.
-            mirrorScreen.setAttribute('material', 'flipX', true);
-          } else {
-            // Sol el sağlamsa, sağ tarafta sağlam elin simetrik yansımasını görmeliyiz.
-            mirrorScreen.setAttribute('material', 'flipX', false);
+      hands.onResults(onHandResults);
+
+      // Yapay zeka sonuçları ürettiğinde çalışacak fonksiyon (Görüntü Manipülasyonu)
+      function onHandResults(results) {
+        if(!modelLoaded) {
+          modelLoaded = true;
+          statusText.innerHTML = "Model Hazır! Elinizi seçip VR moduna geçebilirsiniz.";
+        }
+
+        // Önce ham kamera görüntüsünü canvas'a çiz (Arka plan sabit kalıyor)
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+        // Eğer ekranda el tespit edildiyse manipülasyona başla
+        if (results.multiHandLandmarks && results.multiHandedness) {
+          let leftHandIdx = -1;
+          let rightHandIdx = -1;
+
+          // Hangi elin nerede olduğunu anla
+          for(let i=0; i<results.multiHandedness.length; i++) {
+            const label = results.multiHandedness[i].label; // "Left" veya "Right"
+            if(label === "Left") leftHandIdx = i;
+            if(label === "Right") rightHandIdx = i;
           }
 
-          // Menüyü gizle ve VR moduna geç
-          document.getElementById('menu-container').style.display = 'none';
-          statusText.style.display = 'none';
+          // SENARYO 1: SAĞ EL SAĞLAM (Sol eli ortadan kaldır, sağ eli sola aynala)
+          if (stableMode === 'right' && rightHandIdx !== -1) {
+             // 1. Sol elin olduğu bölgeyi temizle (Eğer sol el varsa üzerini kapat/sil)
+             if(leftHandIdx !== -1) {
+               eraseHand(results.multiHandLandmarks[leftHandIdx]);
+             }
+             // 2. Sağ elin görüntüsünü kopyala, ters çevir ve sol tarafa yapıştır
+             mirrorHandToOtherSide(results.multiHandLandmarks[rightHandIdx], 'toLeft');
+          }
           
-          setTimeout(() => { 
-            document.querySelector('a-scene').enterVR(); 
-          }, 200);
+          // SENARYO 2: SOL EL SAĞLAM (Sağ eli ortadan kaldır, sol eli sağa aynala)
+          else if (stableMode === 'left' && leftHandIdx !== -1) {
+             if(rightHandIdx !== -1) {
+               eraseHand(results.multiHandLandmarks[rightHandIdx]);
+             }
+             mirrorHandToOtherSide(results.multiHandLandmarks[leftHandIdx], 'toRight');
+          }
+        }
+
+        // VR ekranındaki dokuyu (Texture) sürekli güncelle
+        if(mirrorScreen.object3DMap.mesh && mirrorScreen.object3DMap.mesh.material.map) {
+          mirrorScreen.object3DMap.mesh.material.map.needsUpdate = true;
+        }
+      }
+
+      // Eli ekrandan silme fonksiyonu (Etrafını siyah yapar veya boşaltır)
+      function eraseHand(landmarks) {
+        ctx.save();
+        ctx.fillStyle = "#000000"; // Hasarlı eli siyah bir maskeyle kapatıyoruz
+        ctx.beginPath();
+        // Elin etrafında kabaca bir alan oluştur
+        let minX = canvas.width, maxX = 0, minY = canvas.height, maxY = 0;
+        landmarks.forEach(lm => {
+          let x = lm.x * canvas.width;
+          let y = lm.y * canvas.height;
+          if(x < minX) minX = x; if(x > maxX) maxX = x;
+          if(y < minY) minY = y; if(y > maxY) maxY = y;
         });
+        // Alanı biraz genişletip sil
+        ctx.fillRect(minX - 30, minY - 30, (maxX - minX) + 60, (maxY - minY) + 60);
+        ctx.restore();
+      }
+
+      // Sağlam eli kesip, aynalayıp diğer tarafa yapıştıran sihirli fonksiyon
+      function mirrorHandToOtherSide(landmarks, direction) {
+        // Elin sınırlarını bul
+        let minX = canvas.width, maxX = 0, minY = canvas.height, maxY = 0;
+        landmarks.forEach(lm => {
+          let x = lm.x * canvas.width;
+          let y = lm.y * canvas.height;
+          if(x < minX) minX = x; if(x > maxX) maxX = x;
+          if(y < minY) minY = y; if(y > maxY) maxY = y;
+        });
+
+        let w = (maxX - minX) + 40;
+        let h = (maxY - minY) + 40;
+        let sx = Math.max(0, minX - 20);
+        let sy = Math.max(0, minY - 20);
+
+        if(w > 0 && h > 0) {
+          ctx.save();
+          // Hedef koordinatı belirle (Ekranın tam simetrisindeki karşı taraf)
+          let targetX = canvas.width - sx - w;
+
+          // Aynalama işlemi yapılıyor
+          ctx.translate(targetX + w/2, sy + h/2);
+          ctx.scale(-1, 1); // Yatayda ters çevir
+          
+          // Sağlam elin piksellerini kendi üzerinden oku ve yeni yere bas
+          ctx.drawImage(canvas, sx, sy, w, h, -w/2, -h/2, w, h);
+          ctx.restore();
+        }
+      }
+
+      // Kamera Başlatma
+      const camera = new Camera(video, {
+        onFrame: async () => { await hands.send({image: video}); },
+        width: 640, height: 480
+      });
+      
+      // Sayfa açılır açılmaz kamerayı gizlice başlatıyoruz
+      navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}})
+      .then(() => { camera.start(); })
+      .catch(err => alert("Kamera izni gerekli."));
+
+      function setMode(mode) {
+        stableMode = mode;
+        document.getElementById('menu-container').style.display = 'none';
+        statusText.style.display = 'none';
+        // VR Moduna geç
+        setTimeout(() => { document.querySelector('a-scene').enterVR(); }, 200);
       }
     </script>
   </body>
