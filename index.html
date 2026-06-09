@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>MirrorHands VR - GitHub Versiyonu</title>
+    <title>MirrorHands VR - Kusursuz Aynalama</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <style>
       #menu-container {
@@ -42,6 +42,7 @@
     </style>
   </head>
   <body>
+
     <div id="menu-container">
       <button class="btn" onclick="startMirroring('right')">Sağ El Sağlam</button>
       <button class="btn" onclick="startMirroring('left')">Sol El Sağlam</button>
@@ -49,10 +50,11 @@
     <div id="status-text">Kamera İzni Bekleniyor...</div>
 
     <script>
+      // Geliştirilmiş WebGL Aynalama Shader'ı
       AFRAME.registerShader('mirror-shader', {
         schema: {
           src: { type: 'map', is: 'uniform' },
-          mirror: { type: 'boolean', is: 'uniform', default: true }
+          flipX: { type: 'boolean', is: 'uniform', default: true }
         },
         vertexShader: `
           varying vec2 vUv;
@@ -64,9 +66,10 @@
         fragmentShader: `
           varying vec2 vUv;
           uniform sampler2D src;
-          uniform bool mirror;
+          uniform bool flipX;
           void main() {
-            vec2 finalUv = mirror ? vec2(1.0 - vUv.x, vUv.y) : vUv;
+            // flipX true ise sağ-sol ters çevir, false ise düz bırak
+            vec2 finalUv = flipX ? vec2(1.0 - vUv.x, vUv.y) : vUv;
             gl_FragColor = texture2D(src, finalUv);
           }
         `
@@ -77,8 +80,16 @@
       <a-assets>
         <video id="webcam" autoplay playsinline muted loop crossorigin="anonymous"></video>
       </a-assets>
-      <a-entity camera look-controls position="0 1.6 0"></a-entity>
-      <a-plane id="mirror-screen" position="0 1.6 -2.5" width="6" height="4.5" material="shader: mirror-shader; src: #webcam; mirror: true;"></a-plane>
+
+      <a-entity camera look-controls position="0 1.6 0">
+        <a-plane id="mirror-screen" 
+                 position="0 0 -1.5" 
+                 width="4" 
+                 height="3" 
+                 material="shader: mirror-shader; src: #webcam; flipX: true;">
+        </a-plane>
+      </a-entity>
+
       <a-sky color="#000000"></a-sky>
     </a-scene>
 
@@ -110,10 +121,26 @@
 
       function startMirroring(dominantHand) {
         if (!localStream) { alert("Kamera izni verilmedi."); return; }
+        
         video.play().then(() => {
+          
+          // Arka kamera (environment) kullandığımız için görüntü zaten doğal olarak terstir.
+          // Klinikteki gerçek ayna etkisini yakalamak için mantığı kuralım:
+          if (dominantHand === 'right') {
+            // Sağ el sağlamsa, sol tarafta sağlam elin simetrik yansımasını görmeliyiz.
+            mirrorScreen.setAttribute('material', 'flipX', true);
+          } else {
+            // Sol el sağlamsa, sağ tarafta sağlam elin simetrik yansımasını görmeliyiz.
+            mirrorScreen.setAttribute('material', 'flipX', false);
+          }
+
+          // Menüyü gizle ve VR moduna geç
           document.getElementById('menu-container').style.display = 'none';
           statusText.style.display = 'none';
-          setTimeout(() => { document.querySelector('a-scene').enterVR(); }, 200);
+          
+          setTimeout(() => { 
+            document.querySelector('a-scene').enterVR(); 
+          }, 200);
         });
       }
     </script>
