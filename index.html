@@ -2,59 +2,67 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>MirrorHands VR - Oyun Merkezi</title>
+    <title>MirrorHands - Odaklanmış Ayna</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <style>
-      /* Profesyonel ve Net Başlangıç Seçim Menüsü */
-      #menu-container {
+      #overlay {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        background: linear-gradient(135deg, #111827 0%, #030712 100%);
-        z-index: 99999; display: flex; flex-direction: column; justify-content: center; align-items: center;
-        font-family: sans-serif;
+        background: #000000; z-index: 9999;
+        display: flex; flex-direction: column; justify-content: center; align-items: center;
       }
-      h1 { color: #f9fafb; margin-bottom: 30px; font-size: 28px; letter-spacing: 2px; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
-      .menu-btn {
-        width: 280px; padding: 18px; margin: 10px; border-radius: 15px;
-        border: 2px solid rgba(255,255,255,0.1); background-color: #1f2937;
-        color: #f3f4f6; font-size: 18px; font-weight: bold; cursor: pointer;
-        transition: all 0.2s ease; box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+      .start-btn {
+        padding: 20px 40px; font-size: 22px; font-weight: bold; cursor: pointer;
+        border: 2px solid #ffffff; border-radius: 50px; background-color: #007AFF; color: white;
+        box-shadow: 0 4px 15px rgba(0,74,255,0.5);
       }
-      .menu-btn:active { transform: scale(0.98); }
-      /* Farklı oyunlar için renkli vurgular */
-      #btn-balloon:hover { background-color: #ef4444; border-color: #f87171; }
-      #btn-rhythm:hover { background-color: #10b981; border-color: #34d399; }
-      #btn-line:hover { background-color: #f59e0b; border-color: #fbbf24; }
-      
-      #status-message { color: #9ca3af; margin-top: 25px; font-size: 14px; }
+      #status { color: #ffffff; font-family: sans-serif; margin-top: 20px; font-size: 16px; }
     </style>
   </head>
   <body>
 
-    <div id="menu-container">
-      <h1>MIRRORHANDS VR</h1>
-      <button id="btn-balloon" class="menu-btn" onclick="selectAndStart('balloon')">🎈 BALON PATLATMA</button>
-      <button id="btn-rhythm" class="menu-btn" onclick="selectAndStart('rhythm')">🎵 RİTİM TAKİBİ</button>
-      <button id="btn-line" class="menu-btn" onclick="selectAndStart('line')">🛤️ ÇİZGİ TAKİBİ</button>
-      <div id="status-message">Lütfen oynamak istediğiniz egzersizi seçin.</div>
+    <div id="overlay">
+      <button class="start-btn" onclick="startApp()">BAŞLAT</button>
+      <div id="status">Kamera bekleniyor, lütfen izin verin...</div>
     </div>
 
     <script>
-      // Dikey Bölme ve Aynalama Yapan Değişmez Klinik Shader
-      AFRAME.registerShader('split-mirror-shader', {
+      // ODAKLANMIŞ MERKEZİ AYNALAMA SHADER'I
+      AFRAME.registerShader('focused-mirror-shader', {
         schema: { src: { type: 'map', is: 'uniform' } },
         vertexShader: `
           varying vec2 vUv;
-          void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
         `,
         fragmentShader: `
           varying vec2 vUv;
           uniform sampler2D src;
           void main() {
-            if (vUv.x >= 0.5) {
-              gl_FragColor = texture2D(src, vUv); // Sağ Taraf: Doğal Kamera
-            } else {
-              vec2 mirroredUv = vec2(1.0 - vUv.x, vUv.y); // Sol Taraf: Sağın Aynası
-              gl_FragColor = texture2D(src, mirroredUv);
+            // vUv.x ekranın yatay eksenidir (0.0 en sol, 1.0 en sağ, 0.5 tam ortası)
+            
+            // AYNALAMA BÖLGESİ TANIMLAMA (Örn: Tam ortadaki %40'lık alan)
+            // Eller buraya denk gelmelidir.
+            float centerStart = 0.3; // Sol sınır
+            float centerEnd = 0.7;   // Sağ sınır
+            
+            // Eğer piksel bu merkezi bölgenin dışındaysa, doğal kamerayı göster
+            if (vUv.x < centerStart || vUv.x > centerEnd) {
+              gl_FragColor = texture2D(src, vUv);
+            } 
+            // Eğer piksel merkezi bölgenin içindeyse, aynalama uygula
+            else {
+              // Sağ sağlam kol: vUv.x > 0.5 ise (bu bölgedeki) görüntüyü al
+              if (vUv.x >= 0.5) {
+                // Sağ taraf: Doğal kamerayı göster (bu bölgedeki)
+                gl_FragColor = texture2D(src, vUv);
+              } else {
+                // Sol taraf: Sağ tarafın (bu bölgedeki) görüntüsünü al, 
+                // yatay eksende ters çevirerek (aynalayarak) buraya bas.
+                vec2 mirroredUv = vec2(1.0 - vUv.x, vUv.y);
+                gl_FragColor = texture2D(src, mirroredUv);
+              }
             }
           }
         `
@@ -72,10 +80,8 @@
                  rotation="-30 0 0"
                  width="4.5" 
                  height="3.2" 
-                 material="shader: split-mirror-shader; src: #webcam;">
+                 material="shader: focused-mirror-shader; src: #webcam;">
         </a-plane>
-        
-        <a-entity id="game-arena" position="0 -0.3 -0.9" rotation="-30 0 0"></a-entity>
       </a-entity>
 
       <a-sky color="#000000"></a-sky>
@@ -83,84 +89,29 @@
 
     <script>
       const video = document.querySelector('#webcam');
-      const arena = document.querySelector('#game-arena');
-      const menu = document.getElementById('menu-container');
-      const statusText = document.getElementById('status-message');
-      
-      // Kullanıcı menüden bir oyuna tıkladığında hem kamera tetiklenir hem VR açılır
-      function selectAndStart(gameType) {
-        statusText.innerHTML = "Kamera başlatılıyor, lütfen bekleyin...";
-        
-        // 1. Kamera Akışını Güvenli Şekilde Çağırıyoruz
-        navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment', width: 1280, height: 720}})
-          .then((stream) => {
-            video.srcObject = stream;
-            
-            // Tarayıcının oynatma blokajını aşmak için
-            video.play().then(() => {
-              // Menüyü ekrandan tamamen kaldır
-              menu.style.display = 'none';
-              
-              // Seçilen oyunu sahneye yükle
-              if (gameType === 'balloon') startBalloonGame();
-              if (gameType === 'rhythm') startRhythmGame();
-              if (gameType === 'line') startLineGame();
+      const statusText = document.querySelector('#status');
+      let localStream = null;
 
-              // Gecikmeli olarak VR moduna geçişi zorla (Güvenlik kilidini açar)
-              setTimeout(() => { 
-                document.querySelector('a-scene').enterVR(); 
-              }, 250);
-            });
-          })
-          .catch((err) => {
-            alert("Kamera izni verilmedi veya hata oluştu: " + err.message);
-            statusText.innerHTML = "Hata: Kamera izni gerekli!";
-          });
-      }
+      navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment', width: 1280, height: 720, frameRate: 60}})
+        .then((stream) => {
+          localStream = stream;
+          video.srcObject = stream;
+          statusText.style.color = "lime";
+          statusText.innerHTML = "Kamera Hazır. Başlat butonuna basabilirsiniz.";
+        })
+        .catch((err) => { 
+          statusText.style.color = "red";
+          statusText.innerHTML = "Kamera izni alınamadı."; 
+        });
 
-      // OYUN 1: BALON PATLATMA MODU
-      function startBalloonGame() {
-        setInterval(() => {
-          const balloon = document.createElement('a-sphere');
-          const xPos = (Math.random() * 1.2) + 0.3; // Tam olarak sağ kolun hareket alanına hedeflenir
-          balloon.setAttribute('position', `${xPos} 0 0`);
-          balloon.setAttribute('radius', '0.12');
-          balloon.setAttribute('color', '#ef4444');
-          balloon.setAttribute('animation', 'property: scale; to: 0 0 0; dur: 2500; easing: easeInQuad');
-          arena.appendChild(balloon);
-          setTimeout(() => balloon.remove(), 2500);
-        }, 1800);
-      }
-
-      // OYUN 2: RİTİM TAKİBİ MODU
-      function startRhythmGame() {
-        // Alt çizgi / Referans hattı
-        const baseLine = document.createElement('a-box');
-        baseLine.setAttribute('width', '3.5'); baseLine.setAttribute('height', '0.02'); baseLine.setAttribute('depth', '0.01');
-        baseLine.setAttribute('position', '0 -0.4 0'); baseLine.setAttribute('color', '#10b981');
-        arena.appendChild(baseLine);
-
-        setInterval(() => {
-          const block = document.createElement('a-box');
-          const xPos = (Math.random() * 1.2) + 0.3;
-          block.setAttribute('position', `${xPos} 0.8 0`);
-          block.setAttribute('width', '0.15'); block.setAttribute('height', '0.08'); block.setAttribute('depth', '0.05');
-          block.setAttribute('color', '#34d399');
-          block.setAttribute('animation', `property: position; to: ${xPos} -0.5 0; dur: 3000; easing: linear`);
-          arena.appendChild(block);
-          setTimeout(() => block.remove(), 3000);
-        }, 1200);
-      }
-
-      // OYUN 3: ÇİZGİ TAKİBİ MODU
-      function startLineGame() {
-        const spiralPath = document.createElement('a-torus-knot');
-        spiralPath.setAttribute('radius', '0.35');
-        spiralPath.setAttribute('radius-tubular', '0.008');
-        spiralPath.setAttribute('position', '0.7 0 0'); // Sağlam elin masadaki rotası
-        spiralPath.setAttribute('rotation', '90 0 0');
-        spiralPath.setAttribute('color', '#f59e0b');
-        arena.appendChild(spiralPath);
+      function startApp() {
+        if (!localStream) return;
+        video.play().then(() => {
+          document.getElementById('overlay').style.display = 'none';
+          setTimeout(() => { 
+            document.querySelector('a-scene').enterVR(); 
+          }, 200);
+        });
       }
     </script>
   </body>
