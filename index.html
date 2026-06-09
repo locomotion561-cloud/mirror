@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>MirrorHands VR - GitHub Versiyonu</title>
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <style>
+      #menu-container {
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 9999;
+        display: flex;
+        gap: 15px;
+      }
+      .btn {
+        padding: 15px 30px;
+        font-size: 18px;
+        font-weight: bold;
+        cursor: pointer;
+        border: 2px solid #ffffff;
+        border-radius: 30px;
+        background-color: #007AFF;
+        color: white;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+      }
+      #status-text {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: lime;
+        font-family: sans-serif;
+        font-size: 16px;
+        background: rgba(0,0,0,0.8);
+        padding: 10px 20px;
+        border-radius: 5px;
+        z-index: 9999;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="menu-container">
+      <button class="btn" onclick="startMirroring('right')">Sağ El Sağlam</button>
+      <button class="btn" onclick="startMirroring('left')">Sol El Sağlam</button>
+    </div>
+    <div id="status-text">Kamera İzni Bekleniyor...</div>
+
+    <script>
+      AFRAME.registerShader('mirror-shader', {
+        schema: {
+          src: { type: 'map', is: 'uniform' },
+          mirror: { type: 'boolean', is: 'uniform', default: true }
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          varying vec2 vUv;
+          uniform sampler2D src;
+          uniform bool mirror;
+          void main() {
+            vec2 finalUv = mirror ? vec2(1.0 - vUv.x, vUv.y) : vUv;
+            gl_FragColor = texture2D(src, finalUv);
+          }
+        `
+      });
+    </script>
+
+    <a-scene webxr="referenceSpaceType: local">
+      <a-assets>
+        <video id="webcam" autoplay playsinline muted loop crossorigin="anonymous"></video>
+      </a-assets>
+      <a-entity camera look-controls position="0 1.6 0"></a-entity>
+      <a-plane id="mirror-screen" position="0 1.6 -2.5" width="6" height="4.5" material="shader: mirror-shader; src: #webcam; mirror: true;"></a-plane>
+      <a-sky color="#000000"></a-sky>
+    </a-scene>
+
+    <script>
+      const video = document.querySelector('#webcam');
+      const mirrorScreen = document.querySelector('#mirror-screen');
+      const statusText = document.querySelector('#status-text');
+      let localStream = null;
+
+      function requestCamera() {
+        const constraints = {
+          video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 60 } },
+          audio: false
+        };
+        navigator.mediaDevices.getUserMedia(constraints)
+          .then((stream) => {
+            localStream = stream;
+            video.srcObject = stream;
+            statusText.style.color = "lime";
+            statusText.innerHTML = "Kamera Hazır! <br> Elinizi seçip gözlüğü takabilirsiniz.";
+          })
+          .catch((err) => {
+            statusText.style.color = "red";
+            statusText.innerHTML = "Kamera izni alınamadı.";
+          });
+      }
+
+      requestCamera();
+
+      function startMirroring(dominantHand) {
+        if (!localStream) { alert("Kamera izni verilmedi."); return; }
+        video.play().then(() => {
+          document.getElementById('menu-container').style.display = 'none';
+          statusText.style.display = 'none';
+          setTimeout(() => { document.querySelector('a-scene').enterVR(); }, 200);
+        });
+      }
+    </script>
+  </body>
+</html>
